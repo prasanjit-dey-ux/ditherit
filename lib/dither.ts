@@ -56,7 +56,7 @@ export const DEFAULT_PARAMS: DitherParams = {
   serpentine: true,
   errorStrength: 0.85,
   invert: false,
-  scale: 6,
+  scale: 2,
   dotMinRadius: 1,
   dotMaxRadius: 2.5,
   threshold: 128,
@@ -264,14 +264,16 @@ export function drawDots(
   w: number,
   h: number
 ) {
-  ctx.fillStyle = params.bgColor;
-  ctx.fillRect(0, 0, w, h);
-
-  // Draw dots on offscreen canvas, then composite with blend mode
+  // ── OffscreenCanvas buffer: compose everything off-screen → single atomic flip ──
   const off = document.createElement("canvas");
   off.width = w; off.height = h;
   const offCtx = off.getContext("2d")!;
 
+  // Background
+  offCtx.fillStyle = params.bgColor;
+  offCtx.fillRect(0, 0, w, h);
+
+  // Dots
   if (params.useSourceColor) {
     for (const d of dots) {
       offCtx.fillStyle = d.cr !== undefined ? `rgb(${d.cr},${d.cg},${d.cb})` : params.dotColor;
@@ -282,18 +284,18 @@ export function drawDots(
     for (const d of dots) { offCtx.beginPath(); offCtx.arc(d.x, d.y, d.r, 0, Math.PI * 2); offCtx.fill(); }
   }
 
-  ctx.globalCompositeOperation = "source-over";
-  ctx.drawImage(off, 0, 0);
-
   // Color overlay
   if (params.overlayOpacity > 0) {
-    ctx.globalCompositeOperation = params.blendMode === "normal" ? "source-over" : params.blendMode as GlobalCompositeOperation;
-    ctx.globalAlpha = params.overlayOpacity;
-    ctx.fillStyle = params.overlayColor;
-    ctx.fillRect(0, 0, w, h);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = "source-over";
+    offCtx.globalCompositeOperation = params.blendMode === "normal" ? "source-over" : params.blendMode as GlobalCompositeOperation;
+    offCtx.globalAlpha = params.overlayOpacity;
+    offCtx.fillStyle = params.overlayColor;
+    offCtx.fillRect(0, 0, w, h);
+    offCtx.globalAlpha = 1;
+    offCtx.globalCompositeOperation = "source-over";
   }
+
+  // Atomic flip to visible canvas
+  ctx.drawImage(off, 0, 0);
 }
 
 export function generateInteractionCode(dots: DotCoord[], repelRadius: number, repelStrength: number): string {

@@ -41,10 +41,10 @@ export const DEFAULT_ASCII_PARAMS: AsciiParams = {
     fontFamily: "monospace",
     charSpacing: 0.6,
     lineSpacing: 1.0,
-    colored: false,
+    colored: true,
     bgColor: "#0a0a0a",
     fgColor: "#ffffff",
-    invertBrightness: false,
+    invertBrightness: true,
     contrast: 10,
     brightness: 0,
     gamma: 1.0,
@@ -134,24 +134,26 @@ export function renderAsciiToCanvas(
     width: number,
     height: number
 ) {
-    // Only reset canvas dimensions when they actually change (avoids clearing ctx state)
     if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width;
         canvas.height = height;
     }
     const ctx = canvas.getContext("2d")!;
 
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = 1;
+    // ── OffscreenCanvas buffer: compose everything atomically → no blink ──
+    const off = document.createElement("canvas");
+    off.width = width; off.height = height;
+    const offCtx = off.getContext("2d")!;
 
-    // Background
-    ctx.fillStyle = params.bgColor;
-    ctx.fillRect(0, 0, width, height);
+    offCtx.shadowBlur = 0;
+    offCtx.globalAlpha = 1;
 
-    // Apply glow AFTER background, before drawing chars
+    offCtx.fillStyle = params.bgColor;
+    offCtx.fillRect(0, 0, width, height);
+
     if (params.glow) {
-        ctx.shadowColor = params.glowColor;
-        ctx.shadowBlur = params.glowRadius;
+        offCtx.shadowColor = params.glowColor;
+        offCtx.shadowBlur = params.glowRadius;
     }
 
     const isPixelMode = params.charset === "pixel";
@@ -161,32 +163,36 @@ export function renderAsciiToCanvas(
             if (cell.char === " " || cell.a < 0.05) continue;
             const t = 1 - cell.brightness;
             if (params.colored) {
-                ctx.fillStyle = `rgba(${Math.round(cell.r)},${Math.round(cell.g)},${Math.round(cell.b)},${(cell.a * t).toFixed(2)})`;
-                ctx.globalAlpha = 1;
+                offCtx.fillStyle = `rgba(${Math.round(cell.r)},${Math.round(cell.g)},${Math.round(cell.b)},${(cell.a * t).toFixed(2)})`;
+                offCtx.globalAlpha = 1;
             } else {
-                ctx.fillStyle = params.fgColor;
-                ctx.globalAlpha = Math.max(0.05, t);
+                offCtx.fillStyle = params.fgColor;
+                offCtx.globalAlpha = Math.max(0.05, t);
             }
-            ctx.fillRect(cell.x, cell.y, cell.w - 0.5, cell.h - 0.5);
+            offCtx.fillRect(cell.x, cell.y, cell.w - 0.5, cell.h - 0.5);
         }
-        ctx.globalAlpha = 1;
+        offCtx.globalAlpha = 1;
     } else {
-        ctx.font = `${params.fontSize}px ${params.fontFamily}`;
-        ctx.textBaseline = "top";
+        offCtx.font = `${params.fontSize}px ${params.fontFamily}`;
+        offCtx.textBaseline = "top";
         for (const cell of cells) {
             if (cell.char === " " || cell.a < 0.05) continue;
             if (params.colored) {
-                ctx.fillStyle = `rgba(${Math.round(cell.r)},${Math.round(cell.g)},${Math.round(cell.b)},${cell.a.toFixed(2)})`;
+                offCtx.fillStyle = `rgba(${Math.round(cell.r)},${Math.round(cell.g)},${Math.round(cell.b)},${cell.a.toFixed(2)})`;
             } else {
-                ctx.fillStyle = params.fgColor;
+                offCtx.fillStyle = params.fgColor;
             }
-            ctx.fillText(cell.char, cell.x, cell.y);
+            offCtx.fillText(cell.char, cell.x, cell.y);
         }
     }
 
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = 1;
+    offCtx.shadowBlur = 0;
+    offCtx.globalAlpha = 1;
+
+    // Atomic flip
+    ctx.drawImage(off, 0, 0);
 }
+
 
 // ── ASCII Video Code Export ─────────────────────────────────────────────────
 export function generateAsciiVideoCode(
