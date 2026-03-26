@@ -4,7 +4,8 @@ import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import {
   Upload, Download, Code, RefreshCw,
   ChevronDown, ChevronRight, Copy, Check,
-  Play, Pause, Film, ImageIcon, Type, Sun, Moon
+  Play, Pause, Film, ImageIcon, Type, Sun, Moon, Star,
+  Columns2, Bookmark, FileVideo, X as XIcon, Plus
 } from "lucide-react";
 import { ditherImage, drawDots, generateInteractionCode, generateReactCode, DEFAULT_PARAMS, DitherParams, DotCoord, BLEND_MODES, dotsToSVG } from "@/lib/dither";
 import { imageDataToAscii, renderAsciiToCanvas, generateAsciiVideoCode, DEFAULT_ASCII_PARAMS, AsciiParams, AsciiCell } from "@/lib/ascii";
@@ -37,6 +38,40 @@ const ASCII_CHARSET_OPTS = [
 
 const PAINT_ONLY_DITHER = new Set<keyof DitherParams>(["bgColor", "dotColor", "repelRadius", "repelStrength"]);
 const PAINT_ONLY_ASCII = new Set<keyof AsciiParams>(["bgColor", "fgColor", "colored", "glow", "glowColor", "glowRadius"]);
+
+interface Preset {
+  id: string; name: string; mode: Mode;
+  params: DitherParams; asciiParams: AsciiParams;
+  builtIn?: boolean;
+}
+
+const BUILT_IN_PRESETS: Preset[] = [
+  {
+    id: "bi_halftone", name: "Halftone", mode: "image", builtIn: true,
+    params: { ...DEFAULT_PARAMS, algorithm: "floyd-steinberg", scale: 4, dotMinRadius: 0.5, dotMaxRadius: 3, bgColor: "#ffffff", dotColor: "#000000" },
+    asciiParams: DEFAULT_ASCII_PARAMS
+  },
+  {
+    id: "bi_blueprint", name: "Blueprint", mode: "image", builtIn: true,
+    params: { ...DEFAULT_PARAMS, algorithm: "ordered", scale: 5, bgColor: "#0a1e4a", dotColor: "#a0c8ff", contrast: 30 },
+    asciiParams: DEFAULT_ASCII_PARAMS
+  },
+  {
+    id: "bi_neon", name: "Neon Dots", mode: "image", builtIn: true,
+    params: { ...DEFAULT_PARAMS, useSourceColor: true, bgColor: "#000000", scale: 3, dotMinRadius: 0.8 },
+    asciiParams: DEFAULT_ASCII_PARAMS
+  },
+  {
+    id: "bi_ghost", name: "Ghost", mode: "image", builtIn: true,
+    params: { ...DEFAULT_PARAMS, threshold: 75, scale: 8, dotMaxRadius: 4, contrast: 45 },
+    asciiParams: DEFAULT_ASCII_PARAMS
+  },
+  {
+    id: "bi_ascii_neon", name: "ASCII Neon", mode: "ascii", builtIn: true,
+    params: DEFAULT_PARAMS,
+    asciiParams: { ...DEFAULT_ASCII_PARAMS, glow: true, glowColor: "#7c5af0", glowRadius: 8, colored: true, invertBrightness: true }
+  },
+];
 
 function computeDims(w: number, h: number) {
   const asp = w / h;
@@ -118,6 +153,7 @@ export default function DitherStudio() {
   const [tab, setTab] = useState<Tab>("studio");
   const [mode, setMode] = useState<Mode>("image");
   const [videoRender, setVideoRender] = useState<VideoRender>("dither");
+  const videoRenderRef = useRef<VideoRender>("dither");
   const [params, setParams] = useState<DitherParams>(DEFAULT_PARAMS);
   const [asciiParams, setAsciiParams] = useState<AsciiParams>(DEFAULT_ASCII_PARAMS);
   const [dots, setDots] = useState<DotCoord[]>([]);
@@ -138,6 +174,20 @@ export default function DitherStudio() {
   const [videoCurrentFrame, setVideoCurFrame] = useState(0);
   const [videoFps, setVideoFps] = useState(24);
   const [progressLabel, setProgressLabel] = useState("");
+  const [githubStars, setGithubStars] = useState<number | null>(null);
+  const [userPresets, setUserPresets] = useState<Preset[]>([]);
+  const [showCompare, setShowCompare] = useState(false);
+  const [splitRatio, setSplitRatio] = useState(0.5);
+  const [exportingWebM, setExportingWebM] = useState(false);
+  const [showSavePreset, setShowSavePreset] = useState(false);
+
+  const compareCanvasRef = useRef<HTMLCanvasElement>(null);
+  const isDraggingSplitRef = useRef(false);
+  const presetNameRef = useRef<HTMLInputElement>(null);
+  type Effect = "repel" | "attract" | "wave" | "noise" | "vortex" | "breathe";
+  const [effect, setEffect] = useState<Effect>("repel");
+  const effectRef = useRef<Effect>("repel");
+  useEffect(() => { effectRef.current = effect; }, [effect]);
 
   const isVideo = mode === "video";
   const isAscii = mode === "ascii" || (isVideo && videoRender === "ascii");
@@ -146,6 +196,22 @@ export default function DitherStudio() {
   const isLoading = isExtracting || isProcessing;
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
+
+  // Keep videoRenderRef in sync
+  useEffect(() => { videoRenderRef.current = videoRender; }, [videoRender]);
+
+  // Fetch GitHub stars
+  useEffect(() => {
+    fetch("https://api.github.com/repos/prasanjit-dey-ux/ditherit")
+      .then(r => r.json())
+      .then(d => { if (typeof d.stargazers_count === "number") setGithubStars(d.stargazers_count); })
+      .catch(() => { });
+  }, []);
+
+  // Load user presets from localStorage on mount
+  useEffect(() => {
+    try { setUserPresets(JSON.parse(localStorage.getItem("ditherit-presets") || "[]")); } catch { /* empty */ }
+  }, []);
 
   const setParam = useCallback(<K extends keyof DitherParams>(k: K, v: DitherParams[K]) => {
     setParams(p => { const n = { ...p, [k]: v }; paramsRef.current = n; return n; });
@@ -216,10 +282,51 @@ export default function DitherStudio() {
   const hasMediaRef = useRef(false);
   const isVideoRef = useRef(false);
   const modeRef = useRef<Mode>("image");
+  const isReprocessingRef = useRef(false);
 
   useEffect(() => { hasMediaRef.current = hasMedia; }, [hasMedia]);
   useEffect(() => { isVideoRef.current = isVideo; }, [isVideo]);
   useEffect(() => { modeRef.current = mode; }, [mode]);
+
+  /* ── Re-dither all raw frames (for structural param changes in video mode) ── */
+  const reprocessDitherFrames = useCallback(async (p: DitherParams) => {
+    if (isReprocessingRef.current) return;
+    isReprocessingRef.current = true;
+    const frames = rawFramesRef.current;
+    if (!frames.length) { isReprocessingRef.current = false; return; }
+    const { w: width, h: height } = canvasSizeRef.current;
+    const dFrames: DotCoord[][] = [];
+    for (let i = 0; i < frames.length; i++) {
+      dFrames.push(ditherImage(frames[i], p, width, height));
+      if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
+    }
+    ditherFramesRef.current = dFrames;
+    dotsRef.current = dFrames[0] ?? [];
+    setDots(dFrames[0] ?? []); setDotCount((dFrames[0] ?? []).length);
+    const idx = frameIdxRef.current;
+    const f = dFrames[idx] ?? dFrames[0];
+    if (f) repaintDither(f, p);
+    isReprocessingRef.current = false;
+  }, [repaintDither, dotsRef]);
+
+  /* ── Re-ascii all raw frames (for structural param changes in video+ASCII mode) ── */
+  const reprocessAsciiFrames = useCallback(async (ap: AsciiParams) => {
+    if (isReprocessingRef.current) return;
+    isReprocessingRef.current = true;
+    const frames = rawFramesRef.current;
+    if (!frames.length) { isReprocessingRef.current = false; return; }
+    const { w: width, h: height } = canvasSizeRef.current;
+    const aFrames: AsciiCell[][] = [];
+    for (let i = 0; i < frames.length; i++) {
+      aFrames.push(imageDataToAscii(frames[i], ap, width, height));
+      if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
+    }
+    asciiFramesRef.current = aFrames;
+    const idx = frameIdxRef.current;
+    const f = aFrames[idx] ?? aFrames[0];
+    if (f) repaintAscii(f, ap);
+    isReprocessingRef.current = false;
+  }, [repaintAscii]);
 
   const triggerRender = useCallback((p: DitherParams, prev: DitherParams) => {
     if (!hasMediaRef.current || isVideoRef.current || modeRef.current !== "image" || !imageRef.current) return;
@@ -259,21 +366,45 @@ export default function DitherStudio() {
     setParams(p => {
       const n = { ...p, [k]: v };
       paramsRef.current = n;
-      triggerRender(n, prevParamsRef.current);
+      if (isVideoRef.current && hasMediaRef.current) {
+        // Video mode: repaint or reprocess
+        const changed = (Object.keys(n) as (keyof DitherParams)[]).filter(key => n[key] !== p[key]);
+        if (changed.every(key => PAINT_ONLY_DITHER.has(key))) {
+          const idx = frameIdxRef.current;
+          const f = ditherFramesRef.current[idx];
+          if (f) repaintDither(f, n);
+        } else {
+          reprocessDitherFrames(n);
+        }
+      } else {
+        triggerRender(n, prevParamsRef.current);
+      }
       prevParamsRef.current = n;
       return n;
     });
-  }, [triggerRender]);
+  }, [triggerRender, repaintDither, reprocessDitherFrames]);
 
   const setAsciiParamLive = useCallback(<K extends keyof AsciiParams>(k: K, v: AsciiParams[K]) => {
     setAsciiParams(p => {
       const n = { ...p, [k]: v };
       asciiParamsRef.current = n;
-      triggerAsciiRender(n, prevAsciiParamsRef.current);
+      if (isVideoRef.current && hasMediaRef.current && videoRenderRef.current === "ascii") {
+        // Video+ASCII mode: repaint or reprocess
+        const changed = (Object.keys(n) as (keyof AsciiParams)[]).filter(key => n[key] !== p[key]);
+        if (changed.every(key => PAINT_ONLY_ASCII.has(key))) {
+          const idx = frameIdxRef.current;
+          const f = asciiFramesRef.current[idx];
+          if (f) repaintAscii(f, n);
+        } else {
+          reprocessAsciiFrames(n);
+        }
+      } else {
+        triggerAsciiRender(n, prevAsciiParamsRef.current);
+      }
       prevAsciiParamsRef.current = n;
       return n;
     });
-  }, [triggerAsciiRender]);
+  }, [triggerAsciiRender, repaintAscii, reprocessAsciiFrames]);
 
   useEffect(() => {
     if (!hasMedia || !isVideo || videoPlaying) return;
@@ -469,7 +600,7 @@ export default function DitherStudio() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoPlaying, videoRender, hasMedia, videoFps]);
 
-  /* ── Preview: spring physics repulsion ── */
+  /* ── Preview: spring physics with swappable effects ── */
   useEffect(() => {
     if (tab !== "preview" || !hasMedia || isAscii) return;
     const canvas = previewCanvasRef.current; if (!canvas) return;
@@ -478,12 +609,19 @@ export default function DitherStudio() {
     const ctx = canvas.getContext("2d")!;
     const SPRING = 0.12, DAMPING = 0.78;
     const interval = 1000 / videoFps;
-    let fidx = 0, lastFrameT = 0, prevTime = 0;
+    let fidx = 0, lastFrameT = 0, prevTime = 0, t = 0;
     const initDots = isVideo ? (ditherFramesRef.current[0] ?? []) : dotsRef.current;
     previewDotsRef.current = initDots.map(d => ({ ...d, ox: d.x, oy: d.y, tx: d.x, ty: d.y, vx: 0, vy: 0 }));
+    // Simple deterministic noise helper
+    const noise2 = (x: number, y: number) => {
+      const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+      return n - Math.floor(n);
+    };
     const loop = (time: number) => {
-      const dt = Math.min((time - prevTime) / 16.67, 2); prevTime = time;
+      const dt = Math.min((time - prevTime) / 16.67, 2); prevTime = time; t += 0.016 * dt;
       const mouse = mouseRef.current; const p = paramsRef.current;
+      const eff = effectRef.current;
+      // Advance video frame
       if (isVideo && ditherFramesRef.current.length > 1 && time - lastFrameT >= interval) {
         lastFrameT = time; fidx = (fidx + 1) % ditherFramesRef.current.length;
         const next = ditherFramesRef.current[fidx]; const prev = previewDotsRef.current;
@@ -498,13 +636,45 @@ export default function DitherStudio() {
         previewDotsRef.current = prev.slice(0, next.length);
       }
       for (const d of previewDotsRef.current) {
+        // Spring toward target (video frame morphing)
         d.ox += (d.tx - d.ox) * 0.18 * dt; d.oy += (d.ty - d.oy) * 0.18 * dt;
         const sx = (d.ox - d.x) * SPRING * dt, sy = (d.oy - d.y) * SPRING * dt;
-        const dx = d.x - mouse.x, dy = d.y - mouse.y, dist = Math.sqrt(dx * dx + dy * dy);
         let fx = sx, fy = sy;
-        if (dist < p.repelRadius && dist > 0.5) {
-          const t = 1 - dist / p.repelRadius, force = t * t * t * p.repelStrength;
-          fx += (dx / dist) * force * dt; fy += (dy / dist) * force * dt;
+        const dx = d.x - mouse.x, dy = d.y - mouse.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (eff === "repel") {
+          if (dist < p.repelRadius && dist > 0.5) {
+            const tt = 1 - dist / p.repelRadius, force = tt * tt * tt * p.repelStrength;
+            fx += (dx / dist) * force * dt; fy += (dy / dist) * force * dt;
+          }
+        } else if (eff === "attract") {
+          if (dist < p.repelRadius && dist > 0.5) {
+            const tt = 1 - dist / p.repelRadius, force = tt * tt * tt * p.repelStrength;
+            fx -= (dx / dist) * force * dt; fy -= (dy / dist) * force * dt;
+          }
+        } else if (eff === "wave") {
+          const amp = p.repelStrength * 0.4;
+          const lambda = Math.max(w, h) * 0.15;
+          d.x = d.ox + Math.sin(d.oy / lambda + t * 2.5) * amp;
+          d.y = d.oy + Math.sin(d.ox / lambda + t * 2.5 + Math.PI * 0.5) * amp;
+          d.vx = 0; d.vy = 0; continue;
+        } else if (eff === "noise") {
+          const scale = 0.008, speed = 1.2;
+          const angle = noise2(d.ox * scale + t * speed, d.oy * scale) * Math.PI * 4;
+          const force = p.repelStrength * 0.08 * dt;
+          fx += Math.cos(angle) * force; fy += Math.sin(angle) * force;
+        } else if (eff === "vortex") {
+          if (dist < p.repelRadius && dist > 0.5) {
+            const tt = 1 - dist / p.repelRadius, force = tt * tt * p.repelStrength * 0.6 * dt;
+            // Tangential: perpendicular to (dx, dy)
+            fx += (-dy / dist) * force; fy += (dx / dist) * force;
+          }
+        } else if (eff === "breathe") {
+          const amp = p.repelStrength * 0.35;
+          const phase = t * 1.8;
+          d.x = d.ox + Math.sin(phase + d.oy * 0.012) * amp;
+          d.y = d.oy + Math.cos(phase + d.ox * 0.012) * amp;
+          d.vx = 0; d.vy = 0; continue;
         }
         d.vx = (d.vx + fx) * Math.pow(DAMPING, dt); d.vy = (d.vy + fy) * Math.pow(DAMPING, dt);
         d.x += d.vx; d.y += d.vy;
@@ -517,24 +687,46 @@ export default function DitherStudio() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, mode, videoRender, hasMedia, canvasSize]);
 
-  /* ── Preview: ASCII ── */
+  /* ── Preview: ASCII with canvas-transform effects ── */
   useEffect(() => {
     if (tab !== "preview" || !hasMedia || !isAscii) return;
     const canvas = previewCanvasRef.current; if (!canvas) return;
     const { w, h } = canvasSizeRef.current; canvas.width = w; canvas.height = h;
     const ap = asciiParamsRef.current; const interval = 1000 / videoFps;
-    let fidx = 0, lastT = 0;
+    let fidx = 0, lastT = 0, t = 0, prevTime = 0;
     if (mode === "ascii" && imageRef.current) renderImageAscii(imageRef.current, ap);
     else { const f = asciiFramesRef.current[0]; if (f) renderAsciiToCanvas(canvas, f, ap, w, h); }
     const loop = (time: number) => {
+      const dt = Math.min((time - prevTime) / 16.67, 2); prevTime = time; t += 0.016 * dt;
       if (isVideo && asciiFramesRef.current.length > 1 && time - lastT >= interval) {
         lastT = time; fidx = (fidx + 1) % asciiFramesRef.current.length;
         const f = asciiFramesRef.current[fidx]; if (f) renderAsciiToCanvas(canvas, f, asciiParamsRef.current, w, h);
       }
+      // Apply canvas-level transform based on effect
+      const eff = effectRef.current;
+      const mouse = mouseRef.current;
+      const amp = 6;
+      if (eff === "wave") {
+        canvas.style.transform = `translate(${Math.sin(t * 2.5) * amp}px, ${Math.cos(t * 1.8) * amp * 0.6}px)`;
+      } else if (eff === "breathe") {
+        const s = 1 + Math.sin(t * 1.8) * 0.015;
+        canvas.style.transform = `scale(${s})`;
+      } else if (eff === "noise") {
+        const nx = Math.sin(t * 7.3) * amp * 0.5, ny = Math.cos(t * 5.7) * amp * 0.5;
+        canvas.style.transform = `translate(${nx}px,${ny}px)`;
+      } else if (eff === "vortex" || eff === "repel" || eff === "attract") {
+        // Subtle cursor-reactive canvas tilt
+        const cx = w / 2, cy = h / 2;
+        const dx = (mouse.x - cx) / cx, dy = (mouse.y - cy) / cy;
+        const sign = eff === "attract" ? -1 : 1;
+        canvas.style.transform = `rotate(${dx * dy * sign * 1.2}deg) translate(${dx * sign * amp * 0.4}px,${dy * sign * amp * 0.4}px)`;
+      } else {
+        canvas.style.transform = "";
+      }
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(rafRef.current);
+    return () => { cancelAnimationFrame(rafRef.current); canvas.style.transform = ""; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, mode, videoRender, hasMedia, canvasSize]);
 
@@ -599,6 +791,62 @@ export default function DitherStudio() {
     setCodeModal(generateReactCode(paramsRef.current, asciiParamsRef.current as unknown as Record<string, unknown>, mode, videoRender));
   }, [mode, videoRender]);
 
+  const exportWebM = useCallback(() => {
+    const canvas = studioCanvasRef.current; if (!canvas || !videoFrameCount) return;
+    let mimeType = "video/webm;codecs=vp9";
+    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = "video/webm";
+    const stream = canvas.captureStream(videoFps);
+    const recorder = new MediaRecorder(stream, { mimeType });
+    const chunks: BlobPart[] = [];
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: "video/webm" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${mediaName.replace(/\.[^.]+$/, "") || "dither"}.webm`; a.click();
+      setExportingWebM(false);
+    };
+    const totalMs = (videoFrameCount / videoFps) * 1000 + 300;
+    setExportingWebM(true);
+    frameIdxRef.current = 0; videoPlayingRef.current = true; setVideoPlaying(true);
+    recorder.start(100);
+    setTimeout(() => { recorder.stop(); videoPlayingRef.current = false; setVideoPlaying(false); }, totalMs);
+  }, [videoFps, videoFrameCount, mediaName]);
+
+  const applyPreset = useCallback((preset: Preset) => {
+    const p = preset.params; const ap = preset.asciiParams;
+    setParams(p); setAsciiParams(ap); paramsRef.current = p; asciiParamsRef.current = ap;
+    setMode(preset.mode); modeRef.current = preset.mode;
+    if (!imageRef.current) return;
+    if (preset.mode === "ascii") renderImageAscii(imageRef.current, ap);
+    else renderImageDither(imageRef.current, p);
+  }, [renderImageAscii, renderImageDither]);
+
+  const saveCurrentAsPreset = useCallback(() => {
+    const name = presetNameRef.current?.value?.trim() || "My Preset";
+    const newPreset: Preset = { id: `user_${Date.now()}`, name, mode, params: paramsRef.current, asciiParams: asciiParamsRef.current };
+    setUserPresets(prev => { const u = [...prev, newPreset]; localStorage.setItem("ditherit-presets", JSON.stringify(u)); return u; });
+    setShowSavePreset(false);
+  }, [mode]);
+
+  const deleteUserPreset = useCallback((id: string) => {
+    setUserPresets(prev => { const u = prev.filter(p => p.id !== id); localStorage.setItem("ditherit-presets", JSON.stringify(u)); return u; });
+  }, []);
+
+  // Draw original on compare canvas whenever compare is shown or frame changes
+  useEffect(() => {
+    if (!showCompare || !hasMedia) return;
+    const canvas = compareCanvasRef.current; if (!canvas) return;
+    const { w, h } = canvasSizeRef.current; canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d")!;
+    if (isVideo) {
+      const raw = rawFramesRef.current[frameIdxRef.current]; if (raw) ctx.putImageData(raw, 0, 0);
+    } else if (imageRef.current) {
+      ctx.drawImage(imageRef.current, 0, 0, w, h);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCompare, hasMedia, isVideo, videoCurrentFrame]);
+
   const modeOptions = useMemo(() => [
     { id: "image", label: "Image", Icon: ImageIcon },
     { id: "video", label: "Video", Icon: Film },
@@ -621,7 +869,7 @@ export default function DitherStudio() {
               </div>
               <span style={{ fontFamily: "'Inter',sans-serif", fontSize: 14, fontWeight: 600, color: "var(--text)", letterSpacing: "-0.02em" }}>ditherit</span>
             </div>
-            <div style={{ display: "flex", gap: 4 }}>
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
               <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} title="Toggle theme"
                 style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, borderRadius: 4, display: "flex", alignItems: "center" }}>
                 {theme === "dark" ? <Sun size={13} /> : <Moon size={13} />}
@@ -657,6 +905,45 @@ export default function DitherStudio() {
 
         {/* Scrollable controls */}
         <div style={{ overflowY: "auto", flex: 1 }}>
+
+          {/* ── Presets ── */}
+          <Section title="Presets" defaultOpen={true}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+              {BUILT_IN_PRESETS.map(p => (
+                <button key={p.name} onClick={() => applyPreset(p)}
+                  className="btn-chip"
+                  style={{ fontSize: 9, padding: "3px 8px" }}>
+                  {p.name}
+                </button>
+              ))}
+            </div>
+            {userPresets.length > 0 && (
+              <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: 9, color: "var(--muted)", fontFamily: "'JetBrains Mono',monospace", letterSpacing: "0.05em" }}>CUSTOM</span>
+                {userPresets.map(p => (
+                  <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <button onClick={() => applyPreset(p)} className="btn-chip" style={{ flex: 1, fontSize: 9, padding: "3px 8px", textAlign: "left" }}>{p.name}</button>
+                    <button onClick={() => deleteUserPreset(p.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", color: "var(--muted)", borderRadius: 4 }} title="Delete">
+                      <XIcon size={10} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {showSavePreset ? (
+              <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                <input id="preset-name-input" autoFocus placeholder="Preset name…"
+                  style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", fontSize: 10, color: "var(--text)", fontFamily: "'JetBrains Mono',monospace", outline: "none" }}
+                  onKeyDown={e => { if (e.key === "Enter") { saveCurrentAsPreset(); } if (e.key === "Escape") setShowSavePreset(false); }} />
+                <button onClick={saveCurrentAsPreset} className="btn-primary" style={{ borderRadius: 6, padding: "4px 8px", fontSize: 10 }}>Save</button>
+                <button onClick={() => setShowSavePreset(false)} className="btn-ghost" style={{ borderRadius: 6, padding: "4px 8px", fontSize: 10 }}>✕</button>
+              </div>
+            ) : (
+              <button onClick={() => setShowSavePreset(true)} className="btn-ghost" style={{ width: "100%", borderRadius: 6, padding: "5px 8px", fontSize: 10, marginTop: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                <Plus size={10} /> Save current as preset
+              </button>
+            )}
+          </Section>
 
           {(mode === "image" || (isVideo && videoRender === "dither")) && (<>
             <Section title="Characters">
@@ -822,87 +1109,159 @@ export default function DitherStudio() {
               <Download size={11} /> Export SVG
             </button>
           )}
+          {isVideo && (
+            <button onClick={exportWebM} disabled={!hasMedia || exportingWebM} className="btn-ghost" style={{ borderRadius: 8, padding: "7px 10px", fontSize: 10, width: "100%" }}>
+              <FileVideo size={11} /> {exportingWebM ? "Recording…" : "Export WebM"}
+            </button>
+          )}
           <button onClick={showReactCode} disabled={!hasMedia} className="btn-primary" style={{ borderRadius: 8, padding: "7px 10px", fontSize: 10, width: "100%" }}>
             <Code size={11} /> Copy React Code
           </button>
         </div>
       </div>
 
-      {/* ═══ RIGHT PANEL ═══ */}
+      {/* ── RIGHT PANEL ── */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid var(--border)", padding: "0 16px", flexShrink: 0, height: 44 }}>
-          {(["studio", "preview"] as Tab[]).map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              style={{ padding: "0 16px", height: "100%", fontSize: 11, fontFamily: "'Inter',sans-serif", fontWeight: 500, background: "none", border: "none", borderBottom: tab === t ? "2px solid var(--accent)" : "2px solid transparent", color: tab === t ? "var(--text)" : "var(--muted)", cursor: "pointer", transition: "color 0.15s", textTransform: "capitalize" }}>
-              {t}
-            </button>
-          ))}
-          {isVideo && hasMedia && !isLoading && tab === "studio" && (
-            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: "var(--muted)" }}>{videoCurrentFrame + 1}/{videoFrameCount}</span>
-              <button onClick={togglePlay} className="btn-ghost" style={{ borderRadius: 8, padding: "5px 12px", fontSize: 10 }}>
-                {videoPlaying ? <Pause size={11} /> : <Play size={11} />} {videoPlaying ? "Pause" : "Play"}
+
+        {/* Tab bar — 3-zone layout: [tabs] [contextual center flex:1] [compare btn] [github] */}
+        <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid var(--border)", padding: "0 12px 0 0", flexShrink: 0, height: 44 }}>
+          {/* LEFT: Studio | Preview tabs */}
+          <div style={{ display: "flex", height: "100%" }}>
+            {(["studio", "preview"] as Tab[]).map(t => (
+              <button key={t} onClick={() => setTab(t)}
+                style={{ padding: "0 16px", height: "100%", fontSize: 11, fontFamily: "'Inter',sans-serif", fontWeight: 500, background: "none", border: "none", borderBottom: tab === t ? "2px solid var(--accent)" : "2px solid transparent", color: tab === t ? "var(--text)" : "var(--muted)", cursor: "pointer", transition: "color 0.15s", textTransform: "capitalize" }}>
+                {t}
               </button>
-            </div>
+            ))}
+          </div>
+          {/* CENTER: contextual info */}
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {isVideo && hasMedia && !isLoading && tab === "studio" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: "var(--muted)" }}>{videoCurrentFrame + 1}/{videoFrameCount}</span>
+                <button onClick={togglePlay} className="btn-ghost" style={{ borderRadius: 8, padding: "5px 12px", fontSize: 10 }}>
+                  {videoPlaying ? <Pause size={11} /> : <Play size={11} />} {videoPlaying ? "Pause" : "Play"}
+                </button>
+              </div>
+            )}
+            {tab === "preview" && hasMedia && (
+              <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                {(["repel", "attract", "wave", "noise", "vortex", "breathe"] as const).map(e => (
+                  <button key={e} onClick={() => setEffect(e)}
+                    className={`btn-chip${effect === e ? " active" : ""}`}
+                    style={{ fontSize: 9, padding: "3px 8px", textTransform: "capitalize" }}>
+                    {e === "noise" ? "Noise" : e === "repel" ? "Repel" : e === "attract" ? "Attract" : e === "wave" ? "Wave" : e === "vortex" ? "Vortex" : "Breathe"}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* RIGHT: Compare toggle + GitHub */}
+          {hasMedia && (
+            <button onClick={() => { setShowCompare(c => !c); if (!showCompare) setTab("studio"); }}
+              style={{ display: "flex", alignItems: "center", gap: 4, background: showCompare ? "var(--accent)" : "var(--surface2)", border: `1px solid ${showCompare ? "var(--accent)" : "var(--border)"}`, borderRadius: 6, padding: "4px 9px", cursor: "pointer", marginRight: 8, flexShrink: 0, transition: "all 0.15s" }}>
+              <Columns2 size={11} color={showCompare ? "#fff" : "var(--muted)"} />
+              <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: showCompare ? "#fff" : "var(--muted)" }}>Compare</span>
+            </button>
           )}
-          {tab === "preview" && !isAscii && hasMedia && (
-            <span style={{ marginLeft: "auto", fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: "var(--muted)" }}>hover to push dots</span>
-          )}
+          <a href="https://github.com/prasanjit-dey-ux/ditherit" target="_blank" rel="noopener noreferrer"
+            title="Star on GitHub"
+            style={{ display: "flex", alignItems: "center", gap: 5, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 9px", textDecoration: "none", cursor: "pointer", transition: "border-color 0.15s, background 0.15s", flexShrink: 0 }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--border-hover)"; e.currentTarget.style.background = "var(--surface)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface2)"; }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ color: "var(--muted)" }}>
+              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12" />
+            </svg>
+            <span style={{ color: "var(--text)", fontSize: 11, fontFamily: "'JetBrains Mono',monospace", fontWeight: 500 }}>GitHub</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 3, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4, padding: "1px 6px" }}>
+              <Star size={9} color="#f5a623" fill="#f5a623" />
+              <span style={{ fontSize: 10, color: "var(--muted)", fontFamily: "'JetBrains Mono',monospace" }}>{githubStars !== null ? githubStars.toLocaleString() : "–"}</span>
+            </span>
+          </a>
         </div>
 
         {/* Canvas area */}
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: canBg, overflow: "hidden", position: "relative" }}
-          onDragOver={e => e.preventDefault()} onDrop={handleDrop}>
-
-          <canvas ref={studioCanvasRef} style={{ display: tab === "studio" ? "block" : "none", maxWidth: "100%", maxHeight: "100%" }} />
-          <canvas ref={previewCanvasRef} onMouseMove={handlePreviewMouseMove} onMouseLeave={() => { mouseRef.current = { x: -9999, y: -9999 }; }}
-            style={{ display: tab === "preview" ? "block" : "none", maxWidth: "100%", maxHeight: "100%", cursor: !isAscii ? "none" : "default" }} />
-
-          {!hasMedia && !isLoading && (
-            <label htmlFor="dither-file-input"
-              onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
-              onDrop={e => { setDragging(false); handleDrop(e); }}
-              style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", gap: 16, zIndex: 10, background: dragging ? "rgba(124,90,240,0.05)" : "transparent", border: dragging ? "2px dashed var(--accent)" : "2px dashed transparent", transition: "all 0.15s" }}>
-              <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--surface)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {isVideo ? <Film size={28} color="var(--muted)" /> : mode === "ascii" ? <Type size={28} color="var(--muted)" /> : <Upload size={28} color="var(--muted)" />}
-              </div>
-              <div style={{ textAlign: "center", display: "flex", flexDirection: "column", gap: 6, alignItems: "center" }}>
-                <p style={{ color: "var(--text)", fontFamily: "'Inter',sans-serif", fontWeight: 500, fontSize: 14 }}>{isVideo ? "Drop a video" : "Drop an image"}</p>
-                <p style={{ color: "var(--muted)", fontSize: 12 }}>{isVideo ? "MP4, WebM, MOV, GIF" : "PNG, JPG, SVG, WebP, GIF"}</p>
-                <div className="btn-primary" style={{ marginTop: 4, borderRadius: 10, padding: "8px 20px", fontSize: 12, pointerEvents: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  <Upload size={12} /> Browse files
-                </div>
-              </div>
-            </label>
-          )}
-
-          {isLoading && (
-            <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, background: "var(--bg)" }}>
-              <div style={{ width: 260, height: 2, background: "var(--border)", borderRadius: 1, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${videoProgress * 100}%`, background: "linear-gradient(to right,#9b7ff4,#7c5af0)", transition: "width 0.2s", borderRadius: 1 }} />
-              </div>
-              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "var(--muted)" }}>{progressLabel}</span>
+        {showCompare && hasMedia ? (
+          /* ── Compare split view ── */
+          <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}
+            onPointerMove={e => {
+              if (!isDraggingSplitRef.current) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              setSplitRatio(Math.max(0.1, Math.min(0.9, (e.clientX - rect.left) / rect.width)));
+            }}
+            onPointerUp={() => { isDraggingSplitRef.current = false; }}>
+            <div style={{ width: `${splitRatio * 100}%`, flexShrink: 0, background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
+              <span style={{ position: "absolute", top: 8, left: 8, fontSize: 9, fontFamily: "'JetBrains Mono',monospace", color: "var(--muted)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 6px", zIndex: 2 }}>ORIGINAL</span>
+              <canvas ref={compareCanvasRef} style={{ maxWidth: "100%", maxHeight: "100%" }} />
             </div>
-          )}
+            <div onPointerDown={e => { isDraggingSplitRef.current = true; (e.target as HTMLElement).setPointerCapture(e.pointerId); }}
+              style={{ width: 4, background: "var(--accent)", cursor: "ew-resize", flexShrink: 0, zIndex: 10, position: "relative" }}>
+              <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: 20, height: 20, borderRadius: "50%", background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M8 12H16M4 12L8 8M4 12L8 16M20 12L16 8M20 12L16 16" /></svg>
+              </div>
+            </div>
+            <div style={{ flex: 1, background: canBg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
+              <span style={{ position: "absolute", top: 8, right: 8, fontSize: 9, fontFamily: "'JetBrains Mono',monospace", color: "var(--muted)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 6px", zIndex: 2 }}>DITHERED</span>
+              <canvas ref={studioCanvasRef} style={{ maxWidth: "100%", maxHeight: "100%" }} />
+            </div>
+          </div>
+        ) : (
+          /* ── Normal canvas area ── */
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: canBg, overflow: "hidden", position: "relative" }}
+            onDragOver={e => e.preventDefault()} onDrop={handleDrop}>
 
-          {hasMedia && !isLoading && (
-            <label htmlFor="dither-file-input" style={{ position: "absolute", bottom: 14, right: 14, cursor: "pointer", zIndex: 20 }}>
-              <span className="btn-ghost" style={{ borderRadius: 8, padding: "6px 14px", fontSize: 10, display: "inline-flex", alignItems: "center", gap: 5, backdropFilter: "blur(8px)" }}>
-                <Upload size={10} /> Change {isVideo ? "video" : "image"}
-              </span>
-            </label>
-          )}
+            <canvas ref={studioCanvasRef} style={{ display: tab === "studio" ? "block" : "none", maxWidth: "100%", maxHeight: "100%" }} />
+            <canvas ref={previewCanvasRef} onMouseMove={handlePreviewMouseMove} onMouseLeave={() => { mouseRef.current = { x: -9999, y: -9999 }; }}
+              style={{ display: tab === "preview" ? "block" : "none", maxWidth: "100%", maxHeight: "100%", cursor: !isAscii ? "none" : "default" }} />
 
-          {tab === "preview" && !hasMedia && (
-            <p style={{ color: "var(--muted)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>Load media in Studio first</p>
-          )}
-        </div>
+            {!hasMedia && !isLoading && (
+              <label htmlFor="dither-file-input"
+                onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
+                onDrop={e => { setDragging(false); handleDrop(e); }}
+                style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", gap: 16, zIndex: 10, background: dragging ? "rgba(124,90,240,0.05)" : "transparent", border: dragging ? "2px dashed var(--accent)" : "2px dashed transparent", transition: "all 0.15s" }}>
+                <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--surface)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {isVideo ? <Film size={28} color="var(--muted)" /> : mode === "ascii" ? <Type size={28} color="var(--muted)" /> : <Upload size={28} color="var(--muted)" />}
+                </div>
+                <div style={{ textAlign: "center", display: "flex", flexDirection: "column", gap: 6, alignItems: "center" }}>
+                  <p style={{ color: "var(--text)", fontFamily: "'Inter',sans-serif", fontWeight: 500, fontSize: 14 }}>{isVideo ? "Drop a video" : "Drop an image"}</p>
+                  <p style={{ color: "var(--muted)", fontSize: 12 }}>{isVideo ? "MP4, WebM, MOV, GIF" : "PNG, JPG, SVG, WebP, GIF"}</p>
+                  <div className="btn-primary" style={{ marginTop: 4, borderRadius: 10, padding: "8px 20px", fontSize: 12, pointerEvents: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <Upload size={12} /> Browse files
+                  </div>
+                </div>
+              </label>
+            )}
+
+            {isLoading && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, background: "var(--bg)" }}>
+                <div style={{ width: 260, height: 2, background: "var(--border)", borderRadius: 1, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${videoProgress * 100}%`, background: "linear-gradient(to right,#9b7ff4,#7c5af0)", transition: "width 0.2s", borderRadius: 1 }} />
+                </div>
+                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "var(--muted)" }}>{progressLabel}</span>
+              </div>
+            )}
+
+            {hasMedia && !isLoading && (
+              <label htmlFor="dither-file-input" style={{ position: "absolute", bottom: 14, right: 14, cursor: "pointer", zIndex: 20 }}>
+                <span className="btn-ghost" style={{ borderRadius: 8, padding: "6px 14px", fontSize: 10, display: "inline-flex", alignItems: "center", gap: 5, backdropFilter: "blur(8px)" }}>
+                  <Upload size={10} /> Change {isVideo ? "video" : "image"}
+                </span>
+              </label>
+            )}
+
+            {tab === "preview" && !hasMedia && (
+              <p style={{ color: "var(--muted)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>Load media in Studio first</p>
+            )}
+          </div>
+        )}
       </div>
+
 
       <input ref={fileInputRef} id="dither-file-input" type="file"
         accept="image/*,image/gif,video/*,video/mp4,video/webm,video/quicktime"
         style={{ position: "fixed", top: -9999, left: -9999, opacity: 0, width: 1, height: 1 }}
         onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
+
 
       {codeModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
@@ -913,7 +1272,7 @@ export default function DitherStudio() {
               <span style={{ fontFamily: "'Inter',sans-serif", fontWeight: 600, fontSize: 14, color: "var(--text)" }}>React Code</span>
               <div style={{ display: "flex", gap: 8 }}>
                 <button className="btn-primary" style={{ borderRadius: 8, padding: "6px 14px", fontSize: 11 }}
-                  onClick={() => { navigator.clipboard.writeText(codeModal); setCopied("react"); setTimeout(() => setCopied(null), 2000); }}>
+                  onClick={() => { if (codeModal) navigator.clipboard.writeText(codeModal); setCopied("react"); setTimeout(() => setCopied(null), 2000); }}>
                   {copied === "react" ? <Check size={11} /> : <Copy size={11} />} {copied === "react" ? "Copied!" : "Copy"}
                 </button>
                 <button className="btn-ghost" style={{ borderRadius: 8, padding: "6px 14px", fontSize: 11 }} onClick={() => setCodeModal(null)}>Close</button>
