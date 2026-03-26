@@ -1,0 +1,33 @@
+{
+    "name": "ditherit-react",
+    "version": "1.0.0",
+    "description": "Real-time dithering, ASCII art, and dot overlay effects as a React component",
+    "main": "dist/index.js",
+    "module": "dist/index.esm.js",
+    "types": "dist/index.d.ts",
+    "files": [
+        "dist",
+        "src"
+    ],
+    "scripts": {
+        "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+        "dev": "tsup src/index.ts --format cjs,esm --dts --watch"
+    },
+    "keywords": [
+        "dither",
+        "ascii",
+        "react",
+        "canvas",
+        "image-processing"
+    ],
+    "peerDependencies": {
+        "react": ">=17.0.0",
+        "react-dom": ">=17.0.0"
+    },
+    "devDependencies": {
+        "@types/react": "^18.0.0",
+        "tsup": "^8.0.0",
+        "typescript": "^5.0.0"
+    },
+    "license": "MIT"
+}
