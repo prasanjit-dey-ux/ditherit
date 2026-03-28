@@ -1,108 +1,89 @@
 # ditherit ✦
 
-> Convert images, videos, and GIFs into beautiful dithered dot art or ASCII — then export as interactive React/JS code.
+**Convert images, videos, and GIFs into beautiful dithered dot art or ASCII — then export as interactive React/JS code.**
+
+https://ditherit-rho.vercel.app
+
+---
+
+## Demo
+
+https://github.com/yourusername/ditherit/raw/main/public/video.mp4
+
+*(Replace `yourusername/ditherit` with your actual GitHub username and repo name)*
 
 ---
 
 ## What is it?
 
-**ditherit** is a browser-based creative tool for turning media into classic dithered dot patterns or ASCII art. It gives you fine-grained control over the output and lets you copy the result directly as embeddable interactive code — not just an image.
-
+**ditherit** is a browser-based creative tool that turns any image, video, or GIF into stunning dithered dot art or ASCII art.  
+You get fine-grained control and can instantly export the result as **interactive code** (React or vanilla JS) — not just a static image.
+*(https://github.com/prasanjit-dey-ux/ditherit)*
 ---
 
 ## Features
 
-- **Dither modes** — Floyd-Steinberg, Atkinson, Ordered (Bayer 8×8), Hard Threshold
-- **ASCII art** — Configurable character sets, font size, spacing, glow effects, source colors
-- **Video & GIF support** — Frame-by-frame processing with playback controls
+- **Dither modes** — Floyd-Steinberg, Atkinson, Ordered (Bayer), Threshold, Variable Dot Halftone
+- **ASCII art** — Custom character sets, font size, spacing, glow, colored output
+- **Video & GIF support** — Full frame-by-frame processing with playback
 - **Interactive preview** — Physics-based dot repulsion on mouse hover
-- **Export options** — PNG, SVG, JSON dot data, copy vanilla JS or React code
-- **Live controls** — All sliders and buttons update the canvas in real time, including in video mode
+- **Export options** — PNG, SVG, JSON, WebM, vanilla JS, or React component code
+- **Live controls** — Real-time updates (including video mode)
 - **Dark / Light theme**
 
 ---
 
-## Usage
+## How to Use
 
-```bash
-bun install
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000)
-
----
-
-## How to use
-
-1. **Pick a mode** — Image · Video · ASCII (top of sidebar)
-2. **Drop or browse** for a file — PNG, JPG, WebP, GIF, MP4, WebM, MOV
-3. **Tune the controls** — algorithm, spacing, colors, tone, glyph overlay
-4. **Export** — PNG · SVG · JSON · Copy JS · Copy React Code
+1. Go to [ditherit-rho.vercel.app](https://ditherit-rho.vercel.app)
+2. Drop an image, video, or GIF
+3. Adjust settings in real time
+4. Export as image or copy ready-to-use code
 
 ---
 
 ## Exporting Code
 
-### Vanilla JS (dot interaction)
-Copies a self-contained `DitherInteraction` class that animates dots with spring-physics mouse repulsion on any `<canvas>`.
-
-### React component
-Copies a `<Dither />` usage snippet for the [ditherit-react](./packages/ditherit-react) package.
-
-```tsx
-import { Dither } from 'ditherit-react';
-
-<Dither
-  type="image"
-  src="/your-image.png"
-  algorithm="floyd-steinberg"
-  spacing={2}
-  interactive
-/>
-```
-
-### ASCII player JS
-Copies a `AsciiVideoPlayer` class that plays back the ASCII video in any `<canvas>` without dependencies.
+- **React Component** — Ready to use in any Next.js/React project
+- **Vanilla JS** — Self-contained class with mouse repulsion physics
+- **ASCII Video Player** — Play back ASCII animations without dependencies
 
 ---
 
 ## Tech Stack
 
-| Layer | Tech |
-|---|---|
-| Framework | Next.js 15 (App Router) |
-| Language | TypeScript |
-| Styling | Vanilla CSS + CSS variables |
-| Processing | Web Workers (dithering), Canvas 2D API |
-| GIF decoding | [gifuct-js](https://github.com/matt-way/gifuct-js) |
-| Video frames | `<video>` + `requestVideoFrameCallback` |
+- **Framework**: Next.js 15 (App Router)
+- **Language**: TypeScript
+- **Processing**: Canvas 2D + Web Workers
+- **GIF Handling**: gifuct-js
+- **Video Frames**: `requestVideoFrameCallback`
 
 ---
 
-## Project Structure
+## Open Source & Contributing
 
-```
-ditherit/
-├── app/               # Next.js app (page, layout, globals.css)
-├── components/
-│   ├── DitherStudio.tsx   # Main studio UI
-│   ├── Slider.tsx
-│   └── Toggle.tsx
-├── lib/
-│   ├── dither.ts          # Dithering algorithms + dot drawing
-│   ├── dither.worker.ts   # Web worker for image dithering
-│   ├── ascii.ts           # ASCII art generation + rendering
-│   ├── videoFrames.ts     # Video frame extraction
-│   └── gifDecoder.ts      # GIF frame decoding
-└── packages/
-    └── ditherit-react/    # React component package
-```
+I mostly vibe-coded this project, so there are still many things that need fixing and optimization (performance, edge cases, UI polish, etc.).
+
+**This project is now open source** under the MIT license.
+
+Feel free to:
+- Try it
+- Report bugs
+- Suggest features
+- Submit pull requests
+
+Every contribution is welcome ❤️
+
+**⭐ If you like the project, please star the repo** — it really helps!
+
+[→ GitHub Repository](https://github.com/prasanjit-dey-ux/ditherit)  
+
 
 ---
 
 ## License
 
-MIT
+MIT © Prasanjit
 
-Builded by https://x.com/prasanjit_ui
+---
+
