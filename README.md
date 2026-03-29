@@ -8,7 +8,7 @@ https://ditherit-rho.vercel.app
 
 ## Demo
 
-https://github.com/yourusername/ditherit/raw/main/public/video.mp4
+https://github.com/prasanjit-dey-ux/ditherit/raw/main/public/video.mp4
 
 *(Replace `yourusername/ditherit` with your actual GitHub username and repo name)*
 
