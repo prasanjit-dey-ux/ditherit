@@ -171,9 +171,14 @@ export function imageDataToAscii(imageData: ImageData, opts: {
 export function drawDots(ctx: CanvasRenderingContext2D, dots: DotCoord[], opts: {
     bgColor?: string; dotColor?: string; useSourceColor?: boolean;
     overlayColor?: string; overlayOpacity?: number; blendMode?: BlendMode;
+    transparentBg?: boolean;
 }, w: number, h: number) {
-    const { bgColor = '#0a0a0a', dotColor = '#fff', useSourceColor = false, overlayColor = '#000', overlayOpacity = 0, blendMode = 'normal' } = opts;
-    ctx.fillStyle = bgColor; ctx.fillRect(0, 0, w, h);
+    const { bgColor = '#0a0a0a', dotColor = '#fff', useSourceColor = false, overlayColor = '#000', overlayOpacity = 0, blendMode = 'normal', transparentBg = false } = opts;
+    if (transparentBg) {
+        ctx.clearRect(0, 0, w, h);
+    } else {
+        ctx.fillStyle = bgColor; ctx.fillRect(0, 0, w, h);
+    }
     if (useSourceColor) {
         for (const d of dots) { ctx.fillStyle = d.cr !== undefined ? `rgb(${d.cr},${d.cg},${d.cb})` : dotColor; ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill(); }
     } else {
@@ -188,13 +193,17 @@ export function drawDots(ctx: CanvasRenderingContext2D, dots: DotCoord[], opts: 
 
 export function drawAscii(ctx: CanvasRenderingContext2D, cells: AsciiCell[], opts: {
     bgColor?: string; fgColor?: string; colored?: boolean; fontSize?: number; fontFamily?: string;
-    glow?: boolean; glowColor?: string; glowRadius?: number;
+    glow?: boolean; glowColor?: string; glowRadius?: number; transparentBg?: boolean;
 }, w: number, h: number) {
     const { bgColor = '#0a0a0a', fgColor = '#fff', colored = false, fontSize = 8, fontFamily = 'monospace',
-        glow = false, glowColor = '#7c5af0', glowRadius = 6 } = opts;
+        glow = false, glowColor = '#7c5af0', glowRadius = 6, transparentBg = false } = opts;
     if (ctx.canvas.width !== w || ctx.canvas.height !== h) { ctx.canvas.width = w; ctx.canvas.height = h; }
     ctx.shadowBlur = 0; ctx.globalAlpha = 1;
-    ctx.fillStyle = bgColor; ctx.fillRect(0, 0, w, h);
+    if (transparentBg) {
+        ctx.clearRect(0, 0, w, h);
+    } else {
+        ctx.fillStyle = bgColor; ctx.fillRect(0, 0, w, h);
+    }
     if (glow) { ctx.shadowColor = glowColor; ctx.shadowBlur = glowRadius; }
     ctx.font = `${fontSize}px ${fontFamily}`; ctx.textBaseline = 'top';
     for (const c of cells) {

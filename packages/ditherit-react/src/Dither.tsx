@@ -59,6 +59,7 @@ export interface DitherProps {
     interactive?: boolean;
     repelRadius?: number;
     repelStrength?: number;
+    removeBackground?: boolean;
     // Style
     className?: string;
     style?: React.CSSProperties;
@@ -81,7 +82,7 @@ export const Dither: React.FC<DitherProps> = ({
     overlayColor = '#000', overlayOpacity = 0, blendMode = 'normal',
     glyphOverlay = false, glyphRadius = 1.5, glyphSpacing = 8, glyphEdgeOnly = true, glyphEdgeThreshold = 40,
     play = true, loop = true, muted = true, fps = 24,
-    interactive = false, repelRadius = 80, repelStrength = 60,
+    interactive = false, repelRadius = 80, repelStrength = 60, removeBackground = false,
     className, style,
 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -102,8 +103,8 @@ export const Dither: React.FC<DitherProps> = ({
         threshold, contrast, brightness, gamma, blur, highlights, sourceColors,
         glyphOverlay, glyphRadius, glyphSpacing, glyphEdgeOnly, glyphEdgeThreshold,
     };
-    const drawOpts = { bgColor: backgroundColor, dotColor, useSourceColor: sourceColors, overlayColor, overlayOpacity, blendMode };
-    const asciiOpts = { bgColor: backgroundColor, fgColor, colored, fontSize, fontFamily, glow, glowColor, glowRadius };
+    const drawOpts = { bgColor: backgroundColor, dotColor, useSourceColor: sourceColors, overlayColor, overlayOpacity, blendMode, transparentBg: removeBackground };
+    const asciiOpts = { bgColor: backgroundColor, fgColor, colored, fontSize, fontFamily, glow, glowColor, glowRadius, transparentBg: removeBackground };
 
     const getImageData = useCallback((src: CanvasImageSource): ImageData | null => {
         const off = document.createElement('canvas');

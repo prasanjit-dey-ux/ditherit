@@ -62,6 +62,7 @@ declare function drawDots(ctx: CanvasRenderingContext2D, dots: DotCoord[], opts:
     overlayColor?: string;
     overlayOpacity?: number;
     blendMode?: BlendMode;
+    transparentBg?: boolean;
 }, w: number, h: number): void;
 declare function drawAscii(ctx: CanvasRenderingContext2D, cells: AsciiCell[], opts: {
     bgColor?: string;
@@ -72,6 +73,7 @@ declare function drawAscii(ctx: CanvasRenderingContext2D, cells: AsciiCell[], op
     glow?: boolean;
     glowColor?: string;
     glowRadius?: number;
+    transparentBg?: boolean;
 }, w: number, h: number): void;
 declare function dotsToSVG(dots: DotCoord[], w: number, h: number, dotColor: string, bgColor: string): string;
 
@@ -122,6 +124,7 @@ interface DitherProps {
     interactive?: boolean;
     repelRadius?: number;
     repelStrength?: number;
+    removeBackground?: boolean;
     className?: string;
     style?: React.CSSProperties;
 }

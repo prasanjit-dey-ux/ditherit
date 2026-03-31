@@ -25,6 +25,7 @@ export interface AsciiParams {
     glow: boolean;         // neon glow effect
     glowColor: string;
     glowRadius: number;    // 0–20
+    transparentBg?: boolean; // skip bg fill (used when bg-erase is enabled)
 }
 
 export const ASCII_CHARSETS: Record<string, string> = {
@@ -148,8 +149,12 @@ export function renderAsciiToCanvas(
     offCtx.shadowBlur = 0;
     offCtx.globalAlpha = 1;
 
-    offCtx.fillStyle = params.bgColor;
-    offCtx.fillRect(0, 0, width, height);
+    if (params.transparentBg) {
+        offCtx.clearRect(0, 0, width, height);
+    } else {
+        offCtx.fillStyle = params.bgColor;
+        offCtx.fillRect(0, 0, width, height);
+    }
 
     if (params.glow) {
         offCtx.shadowColor = params.glowColor;
@@ -189,7 +194,8 @@ export function renderAsciiToCanvas(
     offCtx.shadowBlur = 0;
     offCtx.globalAlpha = 1;
 
-    // Atomic flip
+    // Atomic flip — clear first so transparent bg is honoured on export
+    ctx.clearRect(0, 0, width, height);
     ctx.drawImage(off, 0, 0);
 }
 

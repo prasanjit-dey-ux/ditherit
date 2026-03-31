@@ -262,7 +262,8 @@ export function drawDots(
   dots: DotCoord[],
   params: DitherParams,
   w: number,
-  h: number
+  h: number,
+  transparentBg = false
 ) {
   // ── OffscreenCanvas buffer: compose everything off-screen → single atomic flip ──
   const off = document.createElement("canvas");
@@ -270,8 +271,12 @@ export function drawDots(
   const offCtx = off.getContext("2d")!;
 
   // Background
-  offCtx.fillStyle = params.bgColor;
-  offCtx.fillRect(0, 0, w, h);
+  if (transparentBg) {
+    offCtx.clearRect(0, 0, w, h);
+  } else {
+    offCtx.fillStyle = params.bgColor;
+    offCtx.fillRect(0, 0, w, h);
+  }
 
   // Dots
   if (params.useSourceColor) {
@@ -295,10 +300,11 @@ export function drawDots(
   }
 
   // Atomic flip to visible canvas
+  if (transparentBg) ctx.clearRect(0, 0, w, h);
   ctx.drawImage(off, 0, 0);
 }
 
-export function generateInteractionCode(dots: DotCoord[], repelRadius: number, repelStrength: number): string {
+export function generateInteractionCode(dots: DotCoord[], repelRadius: number, repelStrength: number, removeBackground = false): string {
   return `// ditherit — Generated Interaction Code
 // ${dots.length} dots · repelRadius: ${repelRadius} · repelStrength: ${repelStrength}
 
@@ -318,6 +324,7 @@ class DitherInteraction {
     this.bgColor  = options.bgColor  ?? '#0a0a0a';
     this.dotColor = options.dotColor ?? '#ffffff';
     this.useSourceColor = ${dots[0]?.cr !== undefined};
+    this.removeBackground = options.removeBackground ?? ${removeBackground};
     this.raf = null;
     const SPRING = 0.12, DAMPING = 0.78;
     let prev = 0;
@@ -350,7 +357,11 @@ class DitherInteraction {
   }
   draw() {
     const { ctx, canvas } = this;
-    ctx.fillStyle = this.bgColor; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (this.removeBackground) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    } else {
+      ctx.fillStyle = this.bgColor; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
     for (const d of this.dots) {
       ctx.fillStyle = this.useSourceColor && d.cr !== undefined ? \`rgb(\${d.cr},\${d.cg},\${d.cb})\` : this.dotColor;
       ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill();
@@ -370,7 +381,7 @@ export function dotsToSVG(dots: DotCoord[], w: number, h: number, dotColor: stri
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">\n  <rect width="${w}" height="${h}" fill="${bgColor}"/>\n${circles}\n</svg>`;
 }
 
-export function generateReactCode(p: DitherParams, ap: Record<string, unknown>, mode: string, videoRender: string): string {
+export function generateReactCode(p: DitherParams, ap: Record<string, unknown>, mode: string, videoRender: string, removeBackground = false, _detectedType?: string): string {
   const isAscii = mode === 'ascii' || (mode === 'video' && videoRender === 'ascii');
   const isVideo = mode === 'video';
   const type = isAscii ? 'ascii' : isVideo ? 'video' : 'image';
@@ -409,6 +420,7 @@ export function generateReactCode(p: DitherParams, ap: Record<string, unknown>, 
     props.interactive = true;
     props.repelRadius = p.repelRadius;
     props.repelStrength = p.repelStrength;
+    props.removeBackground = removeBackground;
   } else {
     props.charset = ap.charset;
     props.fontSize = ap.fontSize;

@@ -223,9 +223,13 @@ function imageDataToAscii(imageData, opts, outW, outH) {
   return cells;
 }
 function drawDots(ctx, dots, opts, w, h) {
-  const { bgColor = "#0a0a0a", dotColor = "#fff", useSourceColor = false, overlayColor = "#000", overlayOpacity = 0, blendMode = "normal" } = opts;
-  ctx.fillStyle = bgColor;
-  ctx.fillRect(0, 0, w, h);
+  const { bgColor = "#0a0a0a", dotColor = "#fff", useSourceColor = false, overlayColor = "#000", overlayOpacity = 0, blendMode = "normal", transparentBg = false } = opts;
+  if (transparentBg) {
+    ctx.clearRect(0, 0, w, h);
+  } else {
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, w, h);
+  }
   if (useSourceColor) {
     for (const d of dots) {
       ctx.fillStyle = d.cr !== void 0 ? `rgb(${d.cr},${d.cg},${d.cb})` : dotColor;
@@ -259,7 +263,8 @@ function drawAscii(ctx, cells, opts, w, h) {
     fontFamily = "monospace",
     glow = false,
     glowColor = "#7c5af0",
-    glowRadius = 6
+    glowRadius = 6,
+    transparentBg = false
   } = opts;
   if (ctx.canvas.width !== w || ctx.canvas.height !== h) {
     ctx.canvas.width = w;
@@ -267,8 +272,12 @@ function drawAscii(ctx, cells, opts, w, h) {
   }
   ctx.shadowBlur = 0;
   ctx.globalAlpha = 1;
-  ctx.fillStyle = bgColor;
-  ctx.fillRect(0, 0, w, h);
+  if (transparentBg) {
+    ctx.clearRect(0, 0, w, h);
+  } else {
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, w, h);
+  }
   if (glow) {
     ctx.shadowColor = glowColor;
     ctx.shadowBlur = glowRadius;
@@ -343,6 +352,7 @@ var Dither = ({
   interactive = false,
   repelRadius = 80,
   repelStrength = 60,
+  removeBackground = false,
   className,
   style
 }) => {
@@ -378,8 +388,8 @@ var Dither = ({
     glyphEdgeOnly,
     glyphEdgeThreshold
   };
-  const drawOpts = { bgColor: backgroundColor, dotColor, useSourceColor: sourceColors, overlayColor, overlayOpacity, blendMode };
-  const asciiOpts = { bgColor: backgroundColor, fgColor, colored, fontSize, fontFamily, glow, glowColor, glowRadius };
+  const drawOpts = { bgColor: backgroundColor, dotColor, useSourceColor: sourceColors, overlayColor, overlayOpacity, blendMode, transparentBg: removeBackground };
+  const asciiOpts = { bgColor: backgroundColor, fgColor, colored, fontSize, fontFamily, glow, glowColor, glowRadius, transparentBg: removeBackground };
   const getImageData = useCallback((src2) => {
     const off = document.createElement("canvas");
     off.width = cw;
