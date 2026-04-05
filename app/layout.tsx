@@ -5,6 +5,7 @@ import { Analytics } from "@vercel/analytics/next";
 export const metadata: Metadata = {
   title: "Dither Studio",
   description: "Convert logos into dithered dot coordinates for interactive canvas experiences",
+  icons: { icon: "/logo.svg" },
 };
 
 export default function RootLayout({

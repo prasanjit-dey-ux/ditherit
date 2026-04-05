@@ -1167,9 +1167,7 @@ export default function DitherStudio() {
         <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 24, height: 24, borderRadius: 6, background: "linear-gradient(135deg,#9b7ff4,#7c5af0)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>D</span>
-              </div>
+              <img src="/logo.svg" alt="ditherit logo" style={{ width: 24, height: 24, borderRadius: 6, flexShrink: 0 }} />
               <span style={{ fontFamily: "'Inter',sans-serif", fontSize: 14, fontWeight: 600, color: "var(--text)", letterSpacing: "-0.02em" }}>ditherit</span>
             </div>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
