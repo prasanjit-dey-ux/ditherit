@@ -1169,6 +1169,7 @@ export default function DitherStudio() {
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <img src="/logo.svg" alt="ditherit logo" style={{ width: 24, height: 24, borderRadius: 6, flexShrink: 0 }} />
               <span style={{ fontFamily: "'Inter',sans-serif", fontSize: 14, fontWeight: 600, color: "var(--text)", letterSpacing: "-0.02em" }}>ditherit</span>
+              <a href="https://github.com/prasanjit-dey-ux/ditherit/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" style={{ fontSize: 9, fontFamily: "'JetBrains Mono',monospace", color: "var(--muted)", textDecoration: "none", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 4, padding: "1px 5px" }} title="MIT Licensed">MIT</a>
             </div>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
               <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} title="Toggle theme"
@@ -1528,7 +1529,7 @@ export default function DitherStudio() {
               </button>
             )}
             <a href="https://github.com/prasanjit-dey-ux/ditherit" target="_blank" rel="noopener noreferrer"
-              title="Star on GitHub"
+              title="Star on GitHub (MIT License)"
               style={{ display: "flex", alignItems: "center", gap: 5, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 9px", textDecoration: "none", cursor: "pointer", transition: "border-color 0.15s, background 0.15s", flexShrink: 0 }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--border-hover)"; e.currentTarget.style.background = "var(--surface)"; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface2)"; }}>
@@ -1540,6 +1541,7 @@ export default function DitherStudio() {
                 <Star size={9} color="#f5a623" fill="#f5a623" />
                 <span style={{ fontSize: 10, color: "var(--muted)", fontFamily: "'JetBrains Mono',monospace" }}>{githubStars !== null ? githubStars.toLocaleString() : "–"}</span>
               </span>
+              <span className="hide-on-mobile" style={{ fontSize: 9, color: "var(--accent)", fontFamily: "'JetBrains Mono',monospace", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4, padding: "1px 5px", fontWeight: 500 }}>MIT</span>
             </a>
 
             <a href="https://x.com/Prasanjit_ui" target="_blank" rel="noopener noreferrer"
