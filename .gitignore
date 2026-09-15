@@ -39,3 +39,20 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Security & Environments
+.env
+.env*.local
+.env.production
+.env.prod
+.env.development
+.env.test
+*.key
+*.p12
+*.pfx
+*credentials*.json
+node_modules/
+venv/
+.venv/
+.cache/
+.browser-profile/
